@@ -16,35 +16,72 @@ class Driver():#CHANGE CLASSNAME to the name of your class
     def drive(self): # CHANGE TO THE NAME OF YOUR FUNCTION
         # WRITE THE CODE TO MAKE THE MM GO AROUND THE BLOCK
         
-        for i in range(4):
-            self.straight()
-            rospy.sleep(3)
-            self.stop()
+        #Segment 1
+        self.straight(0.45, 0.30)
+        rospy.sleep(3.7)
+        self.stop()
 
-            rospy.sleep(3)
+        #5 second pause before turn
+        rospy.sleep(5)
 
-            self.right()
-            rospy.sleep(0.8)
-            self.stop()
-            
-            rospy.sleep(3)
-            
+        #Turn A
+        self.right()
+        rospy.sleep(0.8)
+        self.stop()
 
+        #5 second pause before next segment
+        rospy.sleep(5)
+
+        #Segment 2
+        self.straight(0.45, 0.30)
+        rospy.sleep(3.7)
+        self.stop()
+
+        #5 second pause before turn
+        rospy.sleep(5)
+
+        #Turn B
+        self.right()
+        rospy.sleep(0.8)
+        self.stop()
+
+        #5 second pause before next segment
+        rospy.sleep(5)
+
+        #Segment 3
+        self.straight(0.45, 0.30)
+        rospy.sleep(3.7)
+        self.stop()
+
+        #5 second pause before turn
+        rospy.sleep(5)
+
+        #Turn C
+        self.right()
+        rospy.sleep(0.8)
+        self.stop()
+
+        #5 second pause before next segment
+        rospy.sleep(5)
+
+        #Segment 4
+        self.straight(0.45, 0.30)
+        rospy.sleep(3.7)
         self.stop()
 
 
-    def straight(self):
+    def straight(self, left, right):
         print("Moving straight")
-        self.msg.vel_left = 0.5
-        self.msg.vel_right = 0.5
+        self.msg.vel_left = left
+        self.msg.vel_right = right
         self.pub.publish(self.msg)
 
 
 
     def right(self):
         print("Turning right")
-        self.msg.vel_right = 0.5
-        self.msg.vel_left = -0.5
+        self.msg.vel_right = -0.3
+        self.msg.vel_left = 0.3
         self.pub.publish(self.msg)
 
     def stop(self):
