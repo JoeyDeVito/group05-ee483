@@ -16,6 +16,8 @@ dt-launchfile-init
 # NOTE: Use `dt-exec COMMAND` to run the main process (blocking process)
 
 # launching app
+catkin build lab2
+source /code/catkin_ws/devel/setup.bash
 roslaunch $HW_PACKAGE $HW_LAUNCH
 
 # ----------------------------------------------------------------------------
