@@ -16,6 +16,7 @@ class LaneDetector:
 
         self.pub1 = rospy.Publisher("edge_image", Image, queue_size=10)
         self.pub2 = rospy.Publisher("filtered_image", Image, queue_size=10)
+        self.pub3 = rospy.Publisher("edges", Image, queue_size=10)
 
     def detector(self, msg):
         # convert to a ROS image using the bridge
@@ -45,20 +46,39 @@ class LaneDetector:
         #Apply mask
         lane_img = cv2.bitwise_and(cropped, cropped, mask=mask)
 
+        lane_white = cv2.bitwise_and(cropped, cropped, mask=mask_white)
+        lane_yellow = cv2.bitwise_and(cropped, cropped, mask=mask_yllw)
+
         #Hough Transformation
-        gray = cv2.cvtColor(lane_img, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        edges = cv2.Canny(blurred, 100, 200)
+        gray_w = cv2.cvtColor(lane_white, cv2.COLOR_BGR2GRAY)
+        blurred_w = cv2.GaussianBlur(gray_w, (5, 5), 0)
+        edges_w = cv2.Canny(blurred_w, 100, 200)
+
+        gray_y = cv2.cvtColor(lane_yellow, cv2.COLOR_BGR2GRAY)
+        blurred_y = cv2.GaussianBlur(gray_y, (5, 5), 0)
+        edges_y = cv2.Canny(blurred_y, 100, 200)
+
+        edge_mask = cv2.bitwise_or(edges_w, edges_y)
+        
 
         #Detect lines using Hough Transformation
-        lines = cv2.HoughLinesP(edges, 1, np.pi/180, 15, minLineLength=30, maxLineGap=10)
+        lines_w = cv2.HoughLinesP(edges_w, 1, np.pi/180, 15, minLineLength=30, maxLineGap=10)
+        lines_y = cv2.HoughLinesP(edges_y, 1, np.pi/180, 15, minLineLength=30, maxLineGap=10)
+
 
         #Draw detected lines
         output = np.copy(cropped)
-        if lines is not None:
-            for line in lines:
+        if lines_w is not None:
+            for line in lines_w:
                 x1, y1, x2, y2 = line[0]
                 cv2.line(output, (x1, y1), (x2, y2), (255,0,0), 2, cv2.LINE_AA)
+                cv2.circle(output, (x1, y1), 2, (0,255,0), -1)
+                cv2.circle(output, (x2, y2), 2, (0,255,0), -1)
+
+        if lines_y is not None:
+            for line in lines_y:
+                x1, y1, x2, y2 = line[0]
+                cv2.line(output, (x1, y1), (x2, y2), (0,0,255), 2, cv2.LINE_AA)
                 cv2.circle(output, (x1, y1), 2, (0,255,0), -1)
                 cv2.circle(output, (x2, y2), 2, (0,255,0), -1)
 
@@ -68,8 +88,12 @@ class LaneDetector:
         #Filtering white and yellow
         ros_filter = self.bridge.cv2_to_imgmsg(lane_img, "bgr8")
 
+
         self.pub1.publish(ros_lane)
         self.pub2.publish(ros_filter)
+
+        ros_edges = self.bridge.cv2_to_imgmsg(edge_mask, "mono8")
+        self.pub3.publish(ros_edges)
 
 if __name__=="__main__":
     # initialize our node and create a publisher as normal
