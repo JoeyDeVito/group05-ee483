@@ -1,5 +1,5 @@
 <launch>
 <group ns = "driver">
-    <node pkg="final_project" name="driver_node" type="right_turn.py" output="screen"/>
+    <node pkg="final_project" name="lane_detector_py" type="lane_detector_fp.py" output="screen"/>
 </group>
 </launch>

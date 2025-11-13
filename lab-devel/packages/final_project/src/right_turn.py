@@ -3,6 +3,8 @@ import rospy
 import os
 from duckietown_msgs.msg import WheelsCmdStamped # Import the message for the wheel comm
 
+#    <node pkg="final_project" name="driver_node" type="right_turn.py" output="screen"/>
+
 class Driver():#CHANGE CLASSNAME to the name of your class
     def __init__(self):
         self.veh_name = os.environ['VEHICLE_NAME']

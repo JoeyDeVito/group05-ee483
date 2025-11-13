@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+import os
+import sys
+import rospy
+import cv2
+import numpy as np
+from sensor_msgs.msg import Image, CompressedImage
+from cv_bridge import CvBridge
+
+class LaneDetector_fp:
+    def __init__(self):
+        # Instatiate the converter class once by using a class member
+        self.bridge = CvBridge()
+
+        rospy.Subscriber("/ee483mm05/camera_node/image/compressed", CompressedImage, self.detector, queue_size=1, buff_size=10000000)
+
+        self.pub1 = rospy.Publisher("edge_image", Image, queue_size=10)
+        self.pub2 = rospy.Publisher("filtered_image", Image, queue_size=10)
+        self.pub3 = rospy.Publisher("edges", Image, queue_size=10)
+
+    def detector(self, msg):
+        # convert to a ROS image using the bridge
+        #cv_img = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+        cv_img = self.bridge.compressed_imgmsg_to_cv2(msg)
+
+        #Crop 70% of the image
+        h,w = cv_img.shape[:2]
+        cropped = cv_img[int(h*0.4):h, 0:w]
+
+        #Convert to HSV 
+        hsv = cv2.cvtColor(cropped, cv2.COLOR_BGR2HSV)
+
+        #White filter
+        lower_white = np.array([20,0,129])
+        upper_white = np.array([180,255,255])
+        mask_white = cv2.inRange(hsv, lower_white, upper_white)
+
+        #Yellow filter
+        lower_yllw = np.array([18,80,80])
+        upper_yllw = np.array([35,255,255])
+        mask_yllw = cv2.inRange(hsv, lower_yllw, upper_yllw)
+
+        #Red filter
+        lower_red = np.array([0,100,100])
+        upper_red = np.array([10,255,255])
+        mask_red = cv2.inRange(hsv, lower_red, upper_red)
+
+        #Combien the masks
+        mask_wy = cv2.bitwise_or(mask_white, mask_yllw)
+        mask = cv2.bitwise_or(mask_wy, mask_red)
+
+        #Apply mask
+        lane_img = cv2.bitwise_and(cropped, cropped, mask=mask)
+
+        lane_white = cv2.bitwise_and(cropped, cropped, mask=mask_white)
+        lane_yellow = cv2.bitwise_and(cropped, cropped, mask=mask_yllw)
+        lane_red = cv2.bitwise_and(cropped, cropped, mask=mask_red)
+
+        #Hough Transformation
+        gray_w = cv2.cvtColor(lane_white, cv2.COLOR_BGR2GRAY)
+        blurred_w = cv2.GaussianBlur(gray_w, (5, 5), 0)
+        edges_w = cv2.Canny(blurred_w, 100, 200)
+
+        gray_y = cv2.cvtColor(lane_yellow, cv2.COLOR_BGR2GRAY)
+        blurred_y = cv2.GaussianBlur(gray_y, (5, 5), 0)
+        edges_y = cv2.Canny(blurred_y, 100, 200)
+
+        gray_r = cv2.cvtColor(lane_red, cv2.COLOR_BGR2GRAY)
+        blurred_r = cv2.GaussianBlur(gray_r, (5, 5), 0)
+        edges_r = cv2.Canny(blurred_r, 100, 200)
+
+        edge_mask_temp = cv2.bitwise_or(edges_w, edges_y)
+        edge_mask = cv2.bitwise_or(edge_mask_temp, edges_r)
+        
+
+        #Detect lines using Hough Transformation
+        lines_w = cv2.HoughLinesP(edges_w, 1, np.pi/180, 15, minLineLength=30, maxLineGap=10)
+        lines_y = cv2.HoughLinesP(edges_y, 1, np.pi/180, 15, minLineLength=30, maxLineGap=10)
+        lines_r = cv2.HoughLinesP(edges_r, 1, np.pi/180, 15, minLineLength=30, maxLineGap=10)
+
+
+        #Draw detected lines
+        output = np.copy(cropped)
+        if lines_w is not None:
+            for line in lines_w:
+                x1, y1, x2, y2 = line[0]
+                cv2.line(output, (x1, y1), (x2, y2), (255,0,0), 2, cv2.LINE_AA)
+                cv2.circle(output, (x1, y1), 2, (0,255,0), -1)
+                cv2.circle(output, (x2, y2), 2, (0,255,0), -1)
+
+        if lines_r is not None:
+            for line in lines_r:
+                x1, y1, x2, y2 = line[0]
+                cv2.line(output, (x1, y1), (x2, y2), (0,0,255), 2, cv2.LINE_AA)
+                cv2.circle(output, (x1, y1), 2, (0,255,0), -1)
+                cv2.circle(output, (x2, y2), 2, (0,255,0), -1)
+
+        if lines_y is not None:
+            for line in lines_y:
+                x1, y1, x2, y2 = line[0]
+                cv2.line(output, (x1, y1), (x2, y2), (0,0,255), 2, cv2.LINE_AA)
+                cv2.circle(output, (x1, y1), 2, (0,255,0), -1)
+                cv2.circle(output, (x2, y2), 2, (0,255,0), -1)
+
+        #Convert new image to ROS to send
+        ros_lane = self.bridge.cv2_to_imgmsg(output, "bgr8")
+
+        #Filtering white and yellow
+        ros_filter = self.bridge.cv2_to_imgmsg(lane_img, "bgr8")
+
+
+        self.pub1.publish(ros_lane)
+        self.pub2.publish(ros_filter)
+
+        ros_edges = self.bridge.cv2_to_imgmsg(edge_mask, "mono8")
+        self.pub3.publish(ros_edges)
+
+if __name__=="__main__":
+    # initialize our node and create a publisher as normal
+    rospy.init_node("lane_detector_fp", anonymous=True)
+    lane_detect = LaneDetector_fp()
+    rospy.spin()
