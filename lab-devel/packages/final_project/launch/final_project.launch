@@ -1,5 +1,11 @@
 <launch>
-<group ns = "driver">
-    <node pkg="final_project" name="lane_detector_py" type="lane_detector_fp.py" output="screen"/>
-</group>
+
+    <!-- Start your red segment detector -->
+    <node pkg="final_project" type="stopline_detection.py" name="red_segment_detector" output="screen">
+        <param name="debug" value="true"/>
+    </node>
+
+    <!-- Start rqt_image_view to visualize the debug image -->
+    <node pkg="rqt_image_view" type="rqt_image_view" name="rqt_image_view"/>
+          
 </launch>
