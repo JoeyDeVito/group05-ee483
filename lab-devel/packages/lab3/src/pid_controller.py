@@ -12,7 +12,7 @@ class PIDLaneController:
         self.kp = rospy.get_param("~kp", 3.0)
         self.ki = rospy.get_param("~ki", 0.0)
         self.kd = rospy.get_param("~kd", 0.5)
-        self.v = rospy.get_param("~v", 0.0)
+        self.v = rospy.get_param("~v", 0.2)
 
         # Internal PID state
         self.integral = 0.0

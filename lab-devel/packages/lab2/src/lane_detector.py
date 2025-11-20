@@ -1,102 +1,122 @@
 #!/usr/bin/env python3
-import os
-import sys
 import rospy
 import cv2
 import numpy as np
-from sensor_msgs.msg import Image, CompressedImage
-from cv_bridge import CvBridge
 
-class LaneDetector:
+from sensor_msgs.msg import CompressedImage, Image
+from cv_bridge import CvBridge
+from duckietown_msgs.msg import Segment, SegmentList
+from geometry_msgs.msg import Point
+
+
+class RedStopLineDetector:
     def __init__(self):
-        # Instatiate the converter class once by using a class member
         self.bridge = CvBridge()
 
-        rospy.Subscriber("/ee483mm05/camera_node/image/compressed", CompressedImage, self.detector, queue_size=1, buff_size=10000000)
+        rospy.Subscriber(
+            "/ee483mm05/camera_node/image/compressed",
+            CompressedImage,
+            self.process,
+            queue_size=1,
+            buff_size=10000000
+        )
 
-        self.pub1 = rospy.Publisher("edge_image", Image, queue_size=10)
-        self.pub2 = rospy.Publisher("filtered_image", Image, queue_size=10)
-        self.pub3 = rospy.Publisher("edges", Image, queue_size=10)
+        # like Lab 2
+        self.pub_filtered = rospy.Publisher("filtered_image", Image, queue_size=10)
+        self.pub_edges = rospy.Publisher("edges", Image, queue_size=10)
+        self.pub_output = rospy.Publisher("red_lines", Image, queue_size=10)
 
-    def detector(self, msg):
-        # convert to a ROS image using the bridge
-        #cv_img = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-        cv_img = self.bridge.compressed_imgmsg_to_cv2(msg)
+        # Pixel-space red segments for ground projection
+        # self.pub_segments = rospy.Publisher(
+        #     "~lineseglist_out", SegmentList, queue_size=1
+        # )
 
-        #Crop 70% of the image
-        h,w = cv_img.shape[:2]
-        cropped = cv_img[int(h*0.4):h, 0:w]
+    def process(self, msg):
+        # Convert compressed --> cv2 BGR
+        frame = self.bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
 
-        #Convert to HSV 
+        # Crop bottom 60% 
+        h, w = frame.shape[:2]
+        cropped = frame[int(h * 0.4):h, 0:w]
+
+        # Convert to HSV
         hsv = cv2.cvtColor(cropped, cv2.COLOR_BGR2HSV)
 
-        #White filter
-        #lower_white = np.array([80,0,154])
-        #upper_white = np.array([180,65,255])
-        mask_white = cv2.inRange(hsv, (30,0,129), (180,255,255))
+        # Red color masks (two ranges)
+        lower_red1 = np.array([0, 120, 80])
+        upper_red1 = np.array([10, 255, 255])
+        lower_red2 = np.array([160, 120, 80])
+        upper_red2 = np.array([180, 255, 255])
 
-        #Yellow filter
-        lower_yllw = np.array([18,80,80])
-        upper_yllw = np.array([35,255,255])
-        mask_yllw = cv2.inRange(hsv, lower_yllw, upper_yllw)
+        mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+        mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+        mask = cv2.bitwise_or(mask1, mask2)
 
-        #Combien the masks
-        mask = cv2.bitwise_or(mask_white, mask_yllw)
+        # Apply mask to image
+        filtered = cv2.bitwise_and(cropped, cropped, mask=mask)
 
-        #Apply mask
-        lane_img = cv2.bitwise_and(cropped, cropped, mask=mask)
+        # Edge Detection 
+        gray = cv2.cvtColor(filtered, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        edges = cv2.Canny(blurred, 50, 150)
 
-        lane_white = cv2.bitwise_and(cropped, cropped, mask=mask_white)
-        lane_yellow = cv2.bitwise_and(cropped, cropped, mask=mask_yllw)
+        # Hough Line Detection 
+        lines = cv2.HoughLinesP(
+            edges,
+            1,
+            np.pi / 180,
+            threshold=20,
+            minLineLength=20,
+            maxLineGap=10
+        )
 
-        #Hough Transformation
-        gray_w = cv2.cvtColor(lane_white, cv2.COLOR_BGR2GRAY)
-        blurred_w = cv2.GaussianBlur(gray_w, (5, 5), 0)
-        edges_w = cv2.Canny(blurred_w, 100, 200)
-
-        gray_y = cv2.cvtColor(lane_yellow, cv2.COLOR_BGR2GRAY)
-        blurred_y = cv2.GaussianBlur(gray_y, (5, 5), 0)
-        edges_y = cv2.Canny(blurred_y, 100, 200)
-
-        edge_mask = cv2.bitwise_or(edges_w, edges_y)
-        
-
-        #Detect lines using Hough Transformation
-        lines_w = cv2.HoughLinesP(edges_w, 1, np.pi/180, 15, minLineLength=30, maxLineGap=10)
-        lines_y = cv2.HoughLinesP(edges_y, 1, np.pi/180, 15, minLineLength=30, maxLineGap=10)
-
-
-        #Draw detected lines
+        # Copy cropped image to draw line overlay
         output = np.copy(cropped)
-        if lines_w is not None:
-            for line in lines_w:
+
+        # SegmentList message
+        seg_list = SegmentList()
+        seg_list.header.stamp = rospy.Time.now()
+
+        if lines is not None:
+            for line in lines:
                 x1, y1, x2, y2 = line[0]
-                cv2.line(output, (x1, y1), (x2, y2), (255,0,0), 2, cv2.LINE_AA)
-                cv2.circle(output, (x1, y1), 2, (0,255,0), -1)
-                cv2.circle(output, (x2, y2), 2, (0,255,0), -1)
 
-        if lines_y is not None:
-            for line in lines_y:
-                x1, y1, x2, y2 = line[0]
-                cv2.line(output, (x1, y1), (x2, y2), (0,0,255), 2, cv2.LINE_AA)
-                cv2.circle(output, (x1, y1), 2, (0,255,0), -1)
-                cv2.circle(output, (x2, y2), 2, (0,255,0), -1)
+                # Draw for debug image
+                cv2.line(output, (x1, y1), (x2, y2), (0, 0, 255), 3, cv2.LINE_AA)
+                cv2.circle(output, (x1, y1), 3, (0, 255, 0), -1)
+                cv2.circle(output, (x2, y2), 3, (0, 255, 0), -1)
 
-        #Convert new image to ROS to send
-        ros_lane = self.bridge.cv2_to_imgmsg(output, "bgr8")
+                # Build Segment msg for dt-core pipeline
+                seg = Segment()
+                seg.color = Segment.RED
 
-        #Filtering white and yellow
-        ros_filter = self.bridge.cv2_to_imgmsg(lane_img, "bgr8")
+                p1 = Point()
+                p1.x = x1 / float(w)
+                p1.y = y1 / float(h)
+
+                p2 = Point()
+                p2.x = x2 / float(w)
+                p2.y = y2 / float(h)
+
+                seg.pixels_normalized[0] = p1
+                seg.pixels_normalized[1] = p2
+
+                seg_list.segments.append(seg)
+
+        # Publish segment list
+        self.pub_segments.publish(seg_list)
+
+        # Convert and publish debug images
+        ros_filtered = self.bridge.cv2_to_imgmsg(filtered, "bgr8")
+        ros_edges = self.bridge.cv2_to_imgmsg(edges, "mono8")
+        ros_output = self.bridge.cv2_to_imgmsg(output, "bgr8")
+
+        self.pub_filtered.publish(ros_filtered)
+        self.pub_edges.publish(ros_edges)
+        self.pub_output.publish(ros_output)
 
 
-        self.pub1.publish(ros_lane)
-        self.pub2.publish(ros_filter)
-
-        ros_edges = self.bridge.cv2_to_imgmsg(edge_mask, "mono8")
-        self.pub3.publish(ros_edges)
-
-if __name__=="__main__":
-    # initialize our node and create a publisher as normal
-    rospy.init_node("lane_detector", anonymous=True)
-    lane_detect = LaneDetector()
+if __name__ == "__main__":
+    rospy.init_node("red_stopline_detector")
+    node = RedStopLineDetector()
     rospy.spin()

@@ -1,82 +1,61 @@
 #!/usr/bin/env python3
 import rospy
-import cv2
-import numpy as np
+import os
+from duckietown_msgs.msg import SegmentList, Segment
+from std_msgs.msg import Float32, Bool
 
-from duckietown_msgs.msg import Segment, SegmentList
-from geometry_msgs.msg import Point
-from sensor_msgs.msg import CompressedImage
-from sensor_msgs.msg import Image, CompressedImage
-from cv_bridge import CvBridge
-
-
-class RedSegmentDetector:
+class StoplineGroundDetector:
     def __init__(self):
-        self.bridge = CvBridge()
+        rospy.loginfo("Starting Stopline Ground Detector Node")
 
-        # Subscribe to raw camera feed (compressed)
-        rospy.Subscriber("/ee483mm05/camera_node/image/compressed", CompressedImage, self.callback, queue_size=1, buff_size=10000000)
+        veh = os.environ['VEHICLE_NAME']
 
-        # Publish SegmentList (pixel-space) for ground projection
-        # self.pub_segments = rospy.Publisher("~lineseglist_out", SegmentList, queue_size=1)
-        self.pub = rospy.Publisher("filtered_image", Image, queue_size=10)
+        # Subscribe to ground-projected segment list
+        self.sub = rospy.Subscriber(f"/{veh}/ground_projection_node/lineseglist_out",SegmentList,self.cb_segments,queue_size=1)
 
-    def callback(self, msg):
-        # Convert camera image
-        frame = self.bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
-        height, width = frame.shape[:2]
+        # Distance to stop line (meters)
+        self.pub_dist = rospy.Publisher("stopline_distance", Float32, queue_size=10)
 
-        # Convert to HSV
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        # Boolean flag: True = STOP NOW
+        self.pub_stop = rospy.Publisher("stopline_detected", Bool, queue_size=10)
 
-        lower_red1 = np.array([0, 120, 80])
-        upper_red1 = np.array([10, 255, 255])
+        # distance threshold in meters (tune)
+        self.stop_threshold = 0.22
 
-        lower_red2 = np.array([160, 120, 80])
-        upper_red2 = np.array([180, 255, 255])
+    def cb_segments(self, msg):
+        red_x_values = []
 
-        mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
-        mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
-        mask = cv2.bitwise_or(mask1, mask2)
+        for seg in msg.segments:
+            if seg.color != Segment.RED:
+                continue
 
-        # Edge detection
-        edges = cv2.Canny(mask, 50, 150)
+            # Extract ground-plane x-values (front-back distance)
+            x1 = seg.points[0].x
+            x2 = seg.points[1].x
 
-        # Hough line detection
-        lines = cv2.HoughLinesP(edges,rho=1,theta=np.pi / 180,threshold=30,minLineLength=20,maxLineGap=10
-        )
+            # Only consider points IN FRONT of the robot (positive x)
+            for x in [x1, x2]:
+                if x > 0.0:
+                    red_x_values.append(x)
 
-        # Build SegmentList message
-        seg_list = SegmentList()
-        seg_list.header.stamp = rospy.Time.now()
+        if len(red_x_values) == 0:
+            self.pub_stop.publish(False)
+            self.pub_dist.publish(Float32(999.0))
+            return
 
-        if lines is not None:
-            for l in lines:
-                x1, y1, x2, y2 = l[0]
+        # Smallest positive x = closest stop line point
+        dist = min(red_x_values)
 
-                seg = Segment()
-                seg.color = Segment.RED
+        self.pub_dist.publish(Float32(dist))
 
-                # Normalize pixel coords to [0,1]
-                p1 = Point()
-                p1.x = float(x1) / width
-                p1.y = float(y1) / height
+        # Check if within stopping range
+        should_stop = (dist < self.stop_threshold)
+        self.pub_stop.publish(Bool(should_stop))
 
-                p2 = Point()
-                p2.x = float(x2) / width
-                p2.y = float(y2) / height
-
-                # Assign to Segment message
-                seg.pixels_normalized[0] = p1
-                seg.pixels_normalized[1] = p2
-
-                seg_list.segments.append(seg)
-
-        # Publish to ground projection input
-        self.pub_segments.publish(seg_list)
+        rospy.loginfo(f"Stopline distance: {dist:.3f} m   STOP={should_stop}")
 
 
 if __name__ == "__main__":
-    rospy.init_node("red_segment_detector", anonymous=False)
-    node = RedSegmentDetector()
+    rospy.init_node("stopline_ground_detector")
+    StoplineGroundDetector()
     rospy.spin()

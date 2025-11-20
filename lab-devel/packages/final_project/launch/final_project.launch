@@ -1,11 +1,11 @@
 <launch>
 
     <!-- Start your red segment detector -->
-    <node pkg="final_project" type="stopline_detection.py" name="red_segment_detector" output="screen">
-        <param name="debug" value="true"/>
+    <node pkg="final_project" type="stopline_detection.py" name="stopline_ground_detector" output="screen">
     </node>
 
-    <!-- Start rqt_image_view to visualize the debug image -->
-    <node pkg="rqt_image_view" type="rqt_image_view" name="rqt_image_view"/>
+    <include file="$(find lab3)/launch/lab3.launch">
+    </include>
+
           
 </launch>
