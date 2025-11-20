@@ -1,11 +1,23 @@
 <launch>
 
-    <!-- Start your red segment detector -->
-    <node pkg="final_project" type="stopline_detection.py" name="stopline_ground_detector" output="screen">
-    </node>
+    <!-- Start LAB3 stack -->
+    <include file="$(find lab3)/launch/lab3.launch" />
 
-    <include file="$(find lab3)/launch/lab3.launch">
-    </include>
+    <!-- Everything in the vehicle namespace -->
+    <group ns="$(env VEHICLE_NAME)">
 
-          
+        <!-- Stop line detector -->
+        <node pkg="final_project"
+              type="stopline_detection.py"
+              name="stopline_ground_detector"
+              output="screen" />
+
+        <!-- Velocity override node -->
+        <node pkg="final_project"
+              type="stopline_override.py"
+              name="stopline_override"
+              output="screen" />
+
+    </group>
+
 </launch>

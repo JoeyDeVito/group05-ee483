@@ -10,50 +10,39 @@ class StoplineGroundDetector:
 
         veh = os.environ['VEHICLE_NAME']
 
-        # Subscribe to ground-projected segment list
-        self.sub = rospy.Subscriber(f"/{veh}/ground_projection_node/lineseglist_out",SegmentList,self.cb_segments,queue_size=1)
+        rospy.Subscriber(
+            f"/{veh}/ground_projection_node/lineseglist_out",
+            SegmentList,
+            self.cb_segments,
+            queue_size=1
+        )
 
-        # Distance to stop line (meters)
         self.pub_dist = rospy.Publisher("stopline_distance", Float32, queue_size=10)
-
-        # Boolean flag: True = STOP NOW
         self.pub_stop = rospy.Publisher("stopline_detected", Bool, queue_size=10)
 
-        # distance threshold in meters (tune)
-        self.stop_threshold = 0.22
+        self.stop_threshold = 0.16
 
     def cb_segments(self, msg):
-        red_x_values = []
-
+        red_x = []
         for seg in msg.segments:
             if seg.color != Segment.RED:
                 continue
+            for x in [seg.points[0].x, seg.points[1].x]:
+                if x > 0:
+                    red_x.append(x)
 
-            # Extract ground-plane x-values (front-back distance)
-            x1 = seg.points[0].x
-            x2 = seg.points[1].x
-
-            # Only consider points IN FRONT of the robot (positive x)
-            for x in [x1, x2]:
-                if x > 0.0:
-                    red_x_values.append(x)
-
-        if len(red_x_values) == 0:
+        if not red_x:
             self.pub_stop.publish(False)
             self.pub_dist.publish(Float32(999.0))
             return
 
-        # Smallest positive x = closest stop line point
-        dist = min(red_x_values)
+        dist = min(red_x)
+        should_stop = dist < self.stop_threshold
 
         self.pub_dist.publish(Float32(dist))
+        self.pub_stop.publish(should_stop)
 
-        # Check if within stopping range
-        should_stop = (dist < self.stop_threshold)
-        self.pub_stop.publish(Bool(should_stop))
-
-        rospy.loginfo(f"Stopline distance: {dist:.3f} m   STOP={should_stop}")
-
+        rospy.loginfo(f"[STOPLINE] distance={dist:.3f} m stop={should_stop}")
 
 if __name__ == "__main__":
     rospy.init_node("stopline_ground_detector")

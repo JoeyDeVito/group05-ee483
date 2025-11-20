@@ -22,7 +22,7 @@ class PIDLaneController:
         # Subscribers & Publishers
         veh_name = os.environ['VEHICLE_NAME']
         rospy.Subscriber(f"/{veh_name}/lane_filter_node/lane_pose", LanePose, self.lane_pose_cb)
-        self.pub_cmd = rospy.Publisher(f"/{veh_name}/car_cmd_switch_node/cmd", Twist2DStamped, queue_size=10)
+        self.pub_cmd = rospy.Publisher("pid_controller_cmd", Twist2DStamped, queue_size=10)
 
 
     def lane_pose_cb(self, msg):
@@ -30,7 +30,7 @@ class PIDLaneController:
         self.kp = rospy.get_param("~kp", 3.0)
         self.ki = rospy.get_param("~ki", 0.0)
         self.kd = rospy.get_param("~kd", 0.5)
-        self.v = rospy.get_param("~v", 0.0)
+        self.v = rospy.get_param("~v", 0.2)
 
         phi = msg.phi  # Current orientation angle (radians)
         desired_phi = 0.0 # Reference orientation
