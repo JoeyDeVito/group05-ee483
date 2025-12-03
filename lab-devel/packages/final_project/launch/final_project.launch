@@ -12,10 +12,16 @@
               name="stopline_ground_detector"
               output="screen" />
 
-        <!-- Velocity override node -->
+        <!-- Velocity override node (not used anymore but harmless) -->
         <node pkg="final_project"
               type="stopline_override.py"
               name="stopline_override"
+              output="screen" />
+
+        <!-- Behavior manager -->
+        <node pkg="final_project"
+              type="behavior_manager.py"
+              name="behavior_manager"
               output="screen" />
 
     </group>
